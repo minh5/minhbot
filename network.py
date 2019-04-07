@@ -8,15 +8,6 @@ from preprocess import create_words_list
 from preprocess import create_corpus
 from preprocess import words_to_idx
 
-max_features =  16
-
-num_mem_units = 64
-size_batch = 1
-num_timesteps = 1
-num_features = 1
-num_targets = 1
-num_epochs = 10
-
 
 def train_network(data,
                   max_features=16,
