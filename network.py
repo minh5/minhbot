@@ -55,31 +55,30 @@ for i, (input_sentence, output_sentence) in enumerate(zip(inputs, outputs)):
 
 
 # Define an input sequence and process it.
-encoder_inputs = Input(shape=(None,))
-x = Embedding(NUM_ENCODER_TOKENS, LATENT_DIM)(encoder_inputs)
-x, state_h, state_c = LSTM(LATENT_DIM, return_state=True)(x)
+encoder_inputs = Input(shape=(None, NUM_ENCODER_TOKENS))
+encoder = LSTM(LATENT_DIM, return_state=True)
+encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+# We discard `encoder_outputs` and only keep the states.
 encoder_states = [state_h, state_c]
 
 # Set up the decoder, using `encoder_states` as initial state.
-decoder_inputs = Input(shape=(None,))
-x = Embedding(NUM_DECODER_TOKENS, LATENT_DIM)(decoder_inputs)
-x = LSTM(LATENT_DIM, return_sequences=True)(x, initial_state=encoder_states)
-decoder_outputs = Dense(NUM_DECODER_TOKENS, activation="softmax")(x)
+decoder_inputs = Input(shape=(None, NUM_DECODER_TOKENS))
+# We set up our decoder to return full output sequences,
+# and to return internal states as well. We don't use the
+# return states in the training model, but we will use them in inference.
+decoder_lstm = LSTM(LATENT_DIM, return_sequences=True, return_state=True)
+decoder_outputs, _, _ = decoder_lstm(decoder_inputs,
+                                     initial_state=encoder_states)
+decoder_dense = Dense(NUM_DECODER_TOKENS, activation='softmax')
+decoder_outputs = decoder_dense(decoder_outputs)
 
 # Define the model that will turn
 # `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
 model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
 
-# Compile & run training
-model.compile(optimizer="rmsprop", loss="categorical_crossentropy")
-# Note that `decoder_target_data` needs to be one-hot encoded,
-# rather than sequences of integers like `decoder_input_data`!
-model.fit(
-    [encoder_input_data, decoder_input_data],
-    decoder_target_data,
-    batch_size=BATCH_SIZE,
-    epochs=EPOCHS,
-    validation_split=0.2,
-)
-# Save model
-model.save("s2s.h5")
+# Run training
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
+          batch_size=BATCH_SIZE,
+          epochs=EPOCHS,
+          validation_split=0.2)
