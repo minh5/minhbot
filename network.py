@@ -1,78 +1,84 @@
+
+import pathlib
+
+from keras.layers import  Dense
+from keras.layers import Embedding
+from keras.layers import Input
+from keras.layers import LSTM
+from keras.models import Model
 import numpy as np
-import keras.models as kem
-import keras.layers as kel
-import keras.callbacks as kec
-import sklearn.preprocessing as skprep
 
-from preprocess import create_words_list
-from preprocess import create_corpus
-from preprocess import words_to_idx
+from preprocess import *
 
 
-def train_network(data,
-                  max_features=16,
-                  num_mem_units=64, 
-                  size_batch=1, 
-                  num_timesteps=1, 
-                  num_features=1, 
-                  num_targets=1, 
-                  num_epochs=10):
-    model = kem.Sequential()
-    model.add(
-        kel.LSTM(num_mem_units,
-                 stateful=True,
-                 batch_input_shape=(size_batch, num_timesteps, num_features),
-        return_sequences=True))
-    model.add(kel.Dense(num_targets, activation='sigmoid'))
-    model.summary()
-    model.compile(loss='binary_crossentropy', optimizer='adam')
+DATA_PATH  = os.path.join(pathlib.Path.home(), 'minhbot/messages/inbox')
 
-    range_act = (0, 1) # sigmoid
-    range_features = np.array([0, max_features]).reshape(-1, 1)
-    normalizer = skprep.MinMaxScaler(feature_range=range_act)
-    normalizer.fit(range_features)
+# preprocessing
+inputs, outputs = create_inputs_outputs(DATA_PATH)
+inputs, outputs = truncate_words(inputs, outputs, 300)
+input_corpus = create_corpus(inputs)
+output_corpus = create_corpus(outputs)
+vec_inputs = vectorize_words(input_corpus, inputs)
+vec_outputs = vectorize_words(output_corpus, outputs, 'output')
 
-    reset_state = kec.LambdaCallback(on_epoch_end=lambda *_ : model.reset_states())
-
-    # training
-    for seq in data:
-        X = seq[:-1]
-        y = seq[1:] # predict next element
-        X_norm = normalizer.transform(
-            np.array(X).reshape(-1, 1)).reshape(-1, num_timesteps,num_features)
-        y_norm = normalizer.transform(
-            np.array(y).reshape(-1, 1)).reshape(-1, num_timesteps, num_targets)
-        model.fit(X_norm,
-                  y_norm,
-                  epochs=num_epochs, 
-                  batch_size=size_batch, 
-                  shuffle=False,
-                  callbacks=[reset_state])
-        return model
+# Model Variables
+MAX_ENCODER_SEQ_LEN = max([len(txt.split()) for txt in inputs])
+MAX_DECODER_SEQ_LEN = max([len(txt.split()) for txt in outputs])
+NUM_ENCODER_TOKENS = len(input_corpus)
+NUM_DECODER_TOKENS = len(output_corpus)
+BATCH_SIZE = 64  # Batch size for training.
+EPOCHS = 100  # Number of epochs to train for.
+LATENT_DIM = 256  # Latent dimensionality of the encoding space.
 
 
-def predict(data, model):
-    for seq in data:
-        model.reset_states() 
-        for istep in range(len(seq)-1): # input up to not incl last
-            val = seq[istep]
-            X = np.array([val]).reshape(-1, 1)
-            X_norm = normalizer.transform(X).reshape(-1, num_timesteps, num_features)
-            y_norm = model.predict(X_norm)
-        yhat = int(normalizer.inverse_transform(y_norm[0])[0, 0])
-        y = seq[-1] # last
-        put = '{0} predicts {1:d}, expecting {2:d}'.format(
-            ', '.join(str(val) for val in seq[:-1]),
-            yhat,
-            y)
-        print(put)
+# initializing training data
+encoder_input_data = np.zeros(
+    (len(inputs), MAX_ENCODER_SEQ_LEN, NUM_ENCODER_TOKENS),
+    dtype='float32')
+decoder_input_data = np.zeros(
+    (len(inputs), MAX_DECODER_SEQ_LEN, NUM_DECODER_TOKENS),
+    dtype='float32')
+decoder_target_data = np.zeros(
+    (len(inputs), MAX_DECODER_SEQ_LEN, NUM_DECODER_TOKENS),
+    dtype='float32')
 
 
-if __name__ == '__main__':
-    words = create_words_list('/messages/inbox/')
-    corpus = create_corpus(words)
-    data = words_to_idx(words, corpus)
-    training = data[:80000]
-    test = data[80000:]
-    model = train_network(training)
-    predict(test, model)
+for i, (input_sentence, output_sentence) in enumerate(zip(inputs, outputs)):
+    for t, word in enumerate(input_sentence.split()):
+        encoder_input_data[i, t, input_corpus[word]] = 1.
+    for t, word in enumerate(output_sentence.split()):
+        # decoder_target_data is ahead of decoder_input_data by one timestep
+        decoder_input_data[i, t, output_corpus[word]] = 1.
+        if t > 0:
+            # decoder_target_data will be ahead by one timestep
+            # and will not include the start character.
+            decoder_target_data[i, t - 1, output_corpus[word]] = 1.
+
+
+# Define an input sequence and process it.
+encoder_inputs = Input(shape=(None,))
+x = Embedding(NUM_ENCODER_TOKENS, LATENT_DIM)(encoder_inputs)
+x, state_h, state_c = LSTM(LATENT_DIM,
+                           return_state=True)(x)
+encoder_states = [state_h, state_c]
+
+# Set up the decoder, using `encoder_states` as initial state.
+decoder_inputs = Input(shape=(None,))
+x = Embedding(NUM_DECODER_TOKENS, LATENT_DIM)(decoder_inputs)
+x = LSTM(LATENT_DIM, return_sequences=True)(x, initial_state=encoder_states)
+decoder_outputs = Dense(NUM_DECODER_TOKENS, activation='softmax')(x)
+
+# Define the model that will turn
+# `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
+model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+
+# Compile & run training
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+# Note that `decoder_target_data` needs to be one-hot encoded,
+# rather than sequences of integers like `decoder_input_data`!
+model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
+          batch_size=BATCH_SIZE,
+          epochs=EPOCHS,
+          validation_split=0.2)
+# Save model
+model.save('s2s.h5')
