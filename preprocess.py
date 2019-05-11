@@ -49,6 +49,10 @@ def process_messages(data, other_person):
 
             current_texts = [normalize_content(msg)]
     
+    # sometimes I don't respond to people. Whoops
+    if len(inputs) != len(outputs):
+        inputs = inputs[:len(outputs)]
+
     return inputs, outputs
 
 
@@ -82,6 +86,7 @@ def create_inputs_outputs(root_dir):
 
 
 def create_corpus(data):
+    """Create a corpus of all the words"""
     results = {}
     current_number = 0
 
@@ -98,6 +103,7 @@ def create_corpus(data):
 
 
 def vectorize_words(corpus, list_of_sentences, vector_type='input'):
+    """Convert words to their numeric equivalent"""
     results = []
     for sentence in list_of_sentences:
         indexed = [corpus[word] for word in sentence.split()]
@@ -108,3 +114,19 @@ def vectorize_words(corpus, list_of_sentences, vector_type='input'):
 
         results.append(indexed)
     return results
+
+
+def truncate_words(inputs, outputs, max_length=500):
+    """Truncate long inputs and responses in messages"""
+    new_inputs = []
+    new_outputs = []
+
+    for i in range(len(outputs)):
+        output_split = outputs[i].split()
+        input_split = inputs[i].split()
+
+        if len(input_split) < max_length and len(output_split) < max_length:
+            new_inputs.append(inputs[i])
+            new_outputs.append(outputs[i])
+
+    return new_inputs, new_outputs
