@@ -85,10 +85,14 @@ def create_inputs_outputs(root_dir):
     return all_inputs, all_outputs
 
 
-def create_corpus(data):
+def create_corpus(data, corpus=None):
     """Create a corpus of all the words"""
-    results = {}
-    current_number = 0
+    if corpus is None:
+        results = {"\t": 0}
+    else:
+        results = corpus
+
+    current_number = 1
 
     for datum in data:
         for word in datum.split():
@@ -97,8 +101,7 @@ def create_corpus(data):
                 results[word] = current_number
                 current_number += 1
 
-    results["\t"] = current_number + 1
-    results["\n"] = current_number + 2
+    results["\n"] = current_number + 1
     return results
 
 
@@ -130,3 +133,31 @@ def truncate_words(inputs, outputs, max_length=500):
             new_outputs.append(outputs[i])
 
     return new_inputs, new_outputs
+
+
+if __name__ == "__main__":
+    import pickle
+
+    input_dir = os.path.join(os.getcwd(), "messages", "inbox")
+    inputs, outputs = create_inputs_outputs(input_dir)
+
+    # creating the corpus from conversations, both input and outputs
+    corpus = create_corpus(inputs)
+    corpus = create_corpus(outputs, corpus)
+
+    # truncating words because sometimes people ramble
+    inputs, outputs = truncate_words(inputs, outputs)
+
+    # creating final vectors used for training
+    inputs = vectorize_words(corpus, inputs)
+    outputs = vectorize_words(corpus, outputs, "outputs")
+
+    # pickling and saving before training
+    with open('corpus.pckl', 'w') as fd:
+        pickle.dump(corpus, fd)
+    
+    with open('inputs.pckl', 'w') as fd:
+        pickle.dump(inputs, fd)
+
+    with open('outputs.pckl', 'w') as fd:
+        pickle.dump(outputs, fd)
