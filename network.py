@@ -23,8 +23,7 @@ vec_outputs = vectorize_words(output_corpus, outputs, "output")
 # Model Variables
 MAX_ENCODER_SEQ_LEN = max([len(vec) for vec in vec_inputs])
 MAX_DECODER_SEQ_LEN = max([len(vec) for vec in vec_outputs])
-NUM_ENCODER_TOKENS = len(input_corpus)
-NUM_DECODER_TOKENS = len(output_corpus)
+NUM_ENCODER_TOKENS, NUM_DECODER_TOKENS = len(input_corpus)
 BATCH_SIZE = 64  # Batch size for training.
 EPOCHS = 100  # Number of epochs to train for.
 LATENT_DIM = 256  # Latent dimensionality of the encoding space.
@@ -34,14 +33,11 @@ MAX_DECODER_LENGTH = len(str("{0:b}".format(NUM_DECODER_TOKENS + 1)))
 
 # initializing training data
 encoder_input_data = np.zeros(
-    (len(vec_inputs) , MAX_ENCODER_SEQ_LEN, MAX_ENCODER_LENGTH), dtype="float32"
-)
+    (len(vec_inputs) , MAX_ENCODER_SEQ_LEN, MAX_ENCODER_LENGTH), dtype="float32")
 decoder_input_data = np.zeros(
-    (len(vec_outputs), MAX_DECODER_SEQ_LEN, MAX_DECODER_LENGTH), dtype="float32"
-)
+    (len(vec_outputs), MAX_DECODER_SEQ_LEN, MAX_DECODER_LENGTH), dtype="float32")
 decoder_target_data = np.zeros(
-    (len(vec_outputs), MAX_DECODER_SEQ_LEN, MAX_DECODER_LENGTH), dtype="float32"
-)
+    (len(vec_outputs), MAX_DECODER_SEQ_LEN, MAX_DECODER_LENGTH), dtype="float32")
 
 
 for i, (input_sentence, output_sentence) in enumerate(zip(vec_inputs, vec_outputs)):
@@ -86,3 +82,4 @@ model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
           batch_size=BATCH_SIZE,
           epochs=EPOCHS,
           validation_split=0.2)
+model.save('chatbot.h5')
